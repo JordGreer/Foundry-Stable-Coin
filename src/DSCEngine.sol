@@ -20,6 +20,7 @@
 // internal
 // private
 // view & pure functions
+
 pragma solidity ^0.8.20;
 
 /*
@@ -34,8 +35,30 @@ This stablecoin has the following properties:
 - Algorithmically Stable
 
 It is similar to DAI, but with no governance, no fees, and exclusively backed by WETH and WBTC.
+
+Our DSC system should always be over-collateralized.  The invariant is all collateral > all DSC.
+
+@notice This contract is the core of the DSC System. It handles all the logic for minting
+and redeeming DSC, as well as depositing & withdrawing collateral.
+
+@notice This contract is VERY loosely based on the MakerDAO system.
+
 */
 
 contract DSCEngine {
+    function depositCollateralAndMintDSC() external {}
 
+    function depositCollateral() external {}
+
+    function redeemCollateralForDsc() external {}
+
+    function redeemCollateral() external {}
+
+    function mintDsc() external {}
+
+    function burnDsc() external {}
+
+    function liquidate() external {}
+
+    function getHealthFactor() external view {}
 }
