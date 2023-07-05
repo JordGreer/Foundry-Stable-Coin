@@ -56,10 +56,13 @@ contract DSCEngine is ReentrancyGuard {
     error DSCEngine__TokenAndPriceFeedLengthMismatch();
     error DSCEngine__PriceFeedNotAllowed();
     error DSCEngine__TransferFailed();
+    error DSCEngine__HealthFactorIsBroken(uint256 healthFactor);
+    error DSCEngine__MintFailed();
 
     ///////////////////
     //State Variables//
     ///////////////////
+    uint256 private constant MIN_HEALTH_FACTOR = 1; //The minimum health factor allowed.
 
     uint256 private constant ADDITIONAL_FEED_PRECISION = 1e10; //The precision needed for the price feed.
     uint256 private constant PRECISION = 1e18; //The precision needed for the return price.
@@ -133,6 +136,10 @@ contract DSCEngine is ReentrancyGuard {
     //External Functions///
     ///////////////////////
 
+    function getDscAddress() external view returns (address) {
+        return address(i_dsc);
+    }
+
     function depositCollateralAndMintDSC() external {}
 
     /// @notice follows CEI
@@ -179,8 +186,15 @@ contract DSCEngine is ReentrancyGuard {
     function mintDsc(
         uint256 amountToMint
     ) external moreThanZero(amountToMint) nonReentrant {
+        // Update account of DSC minted.
         s_DSCMinted[msg.sender] += amountToMint;
+        // Check health factor with updated DSC minted.
         _revertIfHealthFactorIsBroken(msg.sender);
+        // Mint DSC.
+        bool minted = i_dsc.mint(msg.sender, amountToMint);
+        if (!minted) {
+            revert DSCEngine__MintFailed();
+        }
     }
 
     function burnDsc() external {}
@@ -218,6 +232,8 @@ contract DSCEngine is ReentrancyGuard {
         // If 1 ETH = $1000, the returned price will be 100000000000.
         // The returned price from Chainlink will be 1000 * 1e8.
         // We need to make sure we return in proper precision.
+
+        //          100000000000    *    1e10            *     1     /   1e18
         return
             ((uint256(price) * ADDITIONAL_FEED_PRECISION) * amount) / PRECISION; // (1000 * 1e8 * (1e10)) * 1000 * 1e18;
     }
@@ -246,31 +262,34 @@ contract DSCEngine is ReentrancyGuard {
     ///@dev Returns how close to liquidation a user is
 
     function _healthFactor(address user) private view returns (uint256) {
-        //We need DSC minted and collateral value
+        //To determine health factor we need DSC minted and collateral value.
 
         (
             uint256 totalDscMinted,
             uint256 collateralValueInUsd
         ) = _getAccountInformation(user);
 
+        //Example Math:
         // Having $1000 in ETH / 100 DSC - Checking for 200% collateralization
-        // 1000 * 50 = 50,000 / 100 = 500 / 100 = 5 > 1
+        // 1000 * 50 / 100 = (500 / 100) = 5 > 1
         // Collateral in USD (1000) * Threshold(50) =  50,000
         // 50,000 / DSC Minted (100) = 500
         //
-        // Essentially dividing by two here, but multiplying by a fraction to get precision.
+        // Essentially dividing by two here, but multiplying by a fraction (1/2) to get precision.
 
         uint256 collateralAdjustedForThreshold = (collateralValueInUsd *
             LIQUIDATION_THRESHOLD) / LIQUIDATION_PRECISION;
 
-        //
+        //Putting adjusted collateral in preceion, then dividing by DSC minted to determine health factor.
         return (collateralAdjustedForThreshold * PRECISION) / totalDscMinted;
     }
 
     ///@dev Revert function if Health Factor for user is in good standing
 
     function _revertIfHealthFactorIsBroken(address user) internal view {
-        //1. Check health, engough collateral
-        //2. Revert if not enough collateral
+        uint256 healthFactor = _healthFactor(user);
+        if (healthFactor < MIN_HEALTH_FACTOR) {
+            revert DSCEngine__HealthFactorIsBroken(healthFactor);
+        }
     }
 }
